@@ -31,12 +31,12 @@
 #include <arch.h>
 #include <arch_helpers.h>
 #include <arm_gic.h>
-#include <assert.h>
 #include <bl_common.h>
 #include <cci400.h>
 #include <debug.h>
 #include <mmio.h>
 #include <platform.h>
+#include <platform_def.h>
 #include <plat_config.h>
 #include <xlat_tables.h>
 #include "../fvp_def.h"
@@ -50,33 +50,70 @@
  ******************************************************************************/
 plat_config_t plat_config;
 
+#define MAP_SHARED_RAM	MAP_REGION_FLAT(FVP_SHARED_RAM_BASE,		\
+					FVP_SHARED_RAM_SIZE,		\
+					MT_MEMORY | MT_RW | MT_SECURE)
+
+#define MAP_FLASH0	MAP_REGION_FLAT(FLASH0_BASE,			\
+					FLASH0_SIZE,			\
+					MT_MEMORY | MT_RO | MT_SECURE)
+
+#define MAP_DEVICE0	MAP_REGION_FLAT(DEVICE0_BASE,			\
+					DEVICE0_SIZE,			\
+					MT_DEVICE | MT_RW | MT_SECURE)
+
+#define MAP_DEVICE1	MAP_REGION_FLAT(DEVICE1_BASE,			\
+					DEVICE1_SIZE,			\
+					MT_DEVICE | MT_RW | MT_SECURE)
+
+#define MAP_DRAM1	MAP_REGION_FLAT(DRAM1_BASE,			\
+					DRAM1_SIZE,			\
+					MT_MEMORY | MT_RW | MT_NS)
+
+#define MAP_TSP_SEC_MEM	MAP_REGION_FLAT(TSP_SEC_MEM_BASE,		\
+					TSP_SEC_MEM_SIZE,		\
+					MT_MEMORY | MT_RW | MT_SECURE)
+
 /*
- * Table of regions to map using the MMU.
+ * Table of regions for various BL stages to map using the MMU.
  * This doesn't include TZRAM as the 'mem_layout' argument passed to
  * configure_mmu_elx() will give the available subset of that,
  */
+#if IMAGE_BL1
 const mmap_region_t fvp_mmap[] = {
-	{ TZROM_BASE,	TZROM_BASE,	TZROM_SIZE,
-						MT_MEMORY | MT_RO | MT_SECURE },
-	{ TZDRAM_BASE,	TZDRAM_BASE,	TZDRAM_SIZE,
-						MT_MEMORY | MT_RW | MT_SECURE },
-	{ FLASH0_BASE,	FLASH0_BASE,	FLASH0_SIZE,
-						MT_MEMORY | MT_RO | MT_SECURE },
-	{ FLASH1_BASE,	FLASH1_BASE,	FLASH1_SIZE,
-						MT_MEMORY | MT_RO | MT_SECURE },
-	{ VRAM_BASE,	VRAM_BASE,	VRAM_SIZE,
-						MT_MEMORY | MT_RW | MT_SECURE },
-	{ DEVICE0_BASE,	DEVICE0_BASE,	DEVICE0_SIZE,
-						MT_DEVICE | MT_RW | MT_SECURE },
-	{ DEVICE1_BASE,	DEVICE1_BASE,	DEVICE1_SIZE,
-						MT_DEVICE | MT_RW | MT_SECURE },
-	/* 2nd GB as device for now...*/
-	{ 0x40000000,	0x40000000,	0x40000000,
-						MT_DEVICE | MT_RW | MT_SECURE },
-	{ DRAM1_BASE,	DRAM1_BASE,	DRAM1_SIZE,
-						MT_MEMORY | MT_RW | MT_NS },
+	MAP_SHARED_RAM,
+	MAP_FLASH0,
+	MAP_DEVICE0,
+	MAP_DEVICE1,
 	{0}
 };
+#endif
+#if IMAGE_BL2
+const mmap_region_t fvp_mmap[] = {
+	MAP_SHARED_RAM,
+	MAP_FLASH0,
+	MAP_DEVICE0,
+	MAP_DEVICE1,
+	MAP_DRAM1,
+	MAP_TSP_SEC_MEM,
+	{0}
+};
+#endif
+#if IMAGE_BL31
+const mmap_region_t fvp_mmap[] = {
+	MAP_SHARED_RAM,
+	MAP_DEVICE0,
+	MAP_DEVICE1,
+	{0}
+};
+#endif
+#if IMAGE_BL32
+const mmap_region_t fvp_mmap[] = {
+	MAP_DEVICE0,
+	MAP_DEVICE1,
+	{0}
+};
+#endif
 
 /* Array of secure interrupts to be configured by the gic driver */
 const unsigned int irq_sec_array[] = {
@@ -135,7 +172,7 @@ DEFINE_CONFIGURE_MMU_EL(3)
  ******************************************************************************/
 int fvp_config_setup(void)
 {
-	unsigned int rev, hbi, bld, arch, sys_id, midr_pn;
+	unsigned int rev, hbi, bld, arch, sys_id;
 
 	sys_id = mmio_read_32(VE_SYSREGS_BASE + V2M_SYS_ID);
 	rev = (sys_id >> SYS_ID_REV_SHIFT) & SYS_ID_REV_MASK;
@@ -194,11 +231,6 @@ int fvp_config_setup(void)
 		}
 		break;
 	case HBI_FVP_BASE:
-		midr_pn = (read_midr() >> MIDR_PN_SHIFT) & MIDR_PN_MASK;
-		plat_config.flags =
-			((midr_pn == MIDR_PN_A57) || (midr_pn == MIDR_PN_A53))
-			? CONFIG_CPUECTLR_SMP_BIT : 0;
-
 		plat_config.max_aff0 = 4;
 		plat_config.max_aff1 = 2;
 		plat_config.flags |= CONFIG_BASE_MMAP | CONFIG_HAS_CCI |
@@ -243,15 +275,26 @@ uint64_t plat_get_syscnt_freq(void)
 	return counter_base_frequency;
 }
 
-void fvp_cci_setup(void)
+void fvp_cci_init(void)
 {
 	/*
-	 * Enable CCI-400 for this cluster. No need
+	 * Initialize CCI-400 driver
+	 */
+	if (plat_config.flags & CONFIG_HAS_CCI)
+		cci_init(CCI400_BASE,
+			CCI400_SL_IFACE3_CLUSTER_IX,
+			CCI400_SL_IFACE4_CLUSTER_IX);
+}
+
+void fvp_cci_enable(void)
+{
+	/*
+	 * Enable CCI-400 coherency for this cluster. No need
 	 * for locks as no other cpu is active at the
 	 * moment
 	 */
 	if (plat_config.flags & CONFIG_HAS_CCI)
-		cci_enable_coherency(read_mpidr());
+		cci_enable_cluster_coherency(read_mpidr());
 }
 
 void fvp_gic_init(void)

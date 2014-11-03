@@ -32,6 +32,7 @@
 #include <asm_macros.S>
 #include <tsp.h>
 #include <xlat_tables.h>
+#include "../tsp_private.h"
 
 
 	.globl	tsp_entrypoint
@@ -77,6 +78,14 @@ func tsp_entrypoint
 	 */
 	adr	x0, tsp_exceptions
 	msr	vbar_el1, x0
+	isb
+
+	/* ---------------------------------------------
+	 * Enable the SError interrupt now that the
+	 * exception vectors have been setup.
+	 * ---------------------------------------------
+	 */
+	msr	daifclr, #DAIF_ABT_BIT
 
 	/* ---------------------------------------------
 	 * Enable the instruction cache, stack pointer
@@ -119,8 +128,8 @@ func tsp_entrypoint
 	 * specific early arch. setup e.g. mmu setup
 	 * ---------------------------------------------
 	 */
-	bl	bl32_early_platform_setup
-	bl	bl32_plat_arch_setup
+	bl	tsp_early_platform_setup
+	bl	tsp_plat_arch_setup
 
 	/* ---------------------------------------------
 	 * Jump to main function.
@@ -153,6 +162,8 @@ func tsp_vector_table
 	b	tsp_cpu_resume_entry
 	b	tsp_cpu_suspend_entry
 	b	tsp_fiq_entry
+	b	tsp_system_off_entry
+	b	tsp_system_reset_entry
 
 	/*---------------------------------------------
 	 * This entrypoint is used by the TSPD when this
@@ -166,6 +177,28 @@ func tsp_vector_table
 	 */
 func tsp_cpu_off_entry
 	bl	tsp_cpu_off_main
+	restore_args_call_smc
+
+	/*---------------------------------------------
+	 * This entrypoint is used by the TSPD when the
+	 * system is about to be switched off (through
+	 * a SYSTEM_OFF psci call) to ask the TSP to
+	 * perform any necessary bookkeeping.
+	 * ---------------------------------------------
+	 */
+func tsp_system_off_entry
+	bl	tsp_system_off_main
+	restore_args_call_smc
+
+	/*---------------------------------------------
+	 * This entrypoint is used by the TSPD when the
+	 * system is about to be reset (through a
+	 * SYSTEM_RESET psci call) to ask the TSP to
+	 * perform any necessary bookkeeping.
+	 * ---------------------------------------------
+	 */
+func tsp_system_reset_entry
+	bl	tsp_system_reset_main
 	restore_args_call_smc
 
 	/*---------------------------------------------
@@ -186,6 +219,10 @@ func tsp_cpu_on_entry
 	 */
 	adr	x0, tsp_exceptions
 	msr	vbar_el1, x0
+	isb
+
+	/* Enable the SError interrupt */
+	msr	daifclr, #DAIF_ABT_BIT
 
 	/* ---------------------------------------------
 	 * Enable the instruction cache, stack pointer

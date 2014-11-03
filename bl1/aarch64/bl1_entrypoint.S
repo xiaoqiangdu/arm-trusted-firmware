@@ -57,7 +57,7 @@ func bl1_entrypoint
 	 * reset e.g. cache, tlb invalidations etc.
 	 * ---------------------------------------------
 	 */
-	bl	cpu_reset_handler
+	bl	reset_handler
 
 	/* ---------------------------------------------
 	 * Enable the instruction cache, stack pointer
@@ -76,6 +76,14 @@ func bl1_entrypoint
 	 */
 	adr	x0, bl1_exceptions
 	msr	vbar_el3, x0
+	isb
+
+	/* ---------------------------------------------
+	 * Enable the SError interrupt now that the
+	 * exception vectors have been setup.
+	 * ---------------------------------------------
+	 */
+	msr	daifclr, #DAIF_ABT_BIT
 
 	/* ---------------------------------------------------------------------
 	 * The initial state of the Architectural feature trap register

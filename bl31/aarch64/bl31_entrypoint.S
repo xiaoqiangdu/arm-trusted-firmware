@@ -68,7 +68,7 @@ func bl31_entrypoint
 	 * Boot ROM(BL0) programming sequence
 	 * -----------------------------------------------------
 	 */
-	bl	cpu_reset_handler
+	bl	reset_handler
 #endif
 	/* ---------------------------------------------
 	 * Enable the instruction cache, stack pointer
@@ -98,6 +98,14 @@ func bl31_entrypoint
 	 */
 	adr	x1, runtime_exceptions
 	msr	vbar_el3, x1
+	isb
+
+	/* ---------------------------------------------
+	 * Enable the SError interrupt now that the
+	 * exception vectors have been setup.
+	 * ---------------------------------------------
+	 */
+	msr	daifclr, #DAIF_ABT_BIT
 
 	/* ---------------------------------------------------------------------
 	 * The initial state of the Architectural feature trap register
@@ -146,6 +154,12 @@ func bl31_entrypoint
 	bl	zeromem16
 
 	/* ---------------------------------------------
+	 * Initialize the cpu_ops pointer.
+	 * ---------------------------------------------
+	 */
+	bl	init_cpu_ops
+
+	/* ---------------------------------------------
 	 * Use SP_EL0 for the C runtime stack.
 	 * ---------------------------------------------
 	 */
@@ -184,7 +198,3 @@ func bl31_entrypoint
 	bl	bl31_main
 
 	b	el3_exit
-
-_panic:
-	wfi
-	b	_panic

@@ -32,9 +32,9 @@
 #include <asm_macros.S>
 #include <bl_common.h>
 #include <gic_v2.h>
+#include <platform_def.h>
 #include <pl011.h>
 #include "../drivers/pwrc/fvp_pwrc.h"
-#include "../fvp_def.h"
 
 	.globl	platform_get_entrypoint
 	.globl	plat_secondary_cold_boot_setup
@@ -140,7 +140,7 @@ warm_reset:
 	 * its safe to read it here with SO attributes
 	 * ---------------------------------------------
 	 */
-	ldr	x10, =TZDRAM_BASE + MBOX_OFF
+	ldr	x10, =MBOX_BASE
 	bl	platform_get_core_pos
 	lsl	x0, x0, #CACHE_WRITEBACK_SHIFT
 	ldr	x0, [x10, x0]
@@ -153,8 +153,8 @@ _panic:	b	_panic
 	/* -----------------------------------------------------
 	 * void platform_mem_init (void);
 	 *
-	 * Zero out the mailbox registers in the TZDRAM. The
-	 * mmu is turned off right now and only the primary can
+	 * Zero out the mailbox registers in the shared memory.
+	 * The mmu is turned off right now and only the primary can
 	 * ever execute this code. Secondaries will read the
 	 * mailboxes using SO accesses. In short, BL31 will
 	 * update the mailboxes after mapping the tzdram as
@@ -163,7 +163,7 @@ _panic:	b	_panic
 	 * -----------------------------------------------------
 	 */
 func platform_mem_init
-	ldr	x0, =TZDRAM_BASE + MBOX_OFF
+	ldr	x0, =MBOX_BASE
 	mov	w1, #PLATFORM_CORE_COUNT
 loop:
 	str	xzr, [x0], #CACHE_WRITEBACK_GRANULE
@@ -215,7 +215,7 @@ func plat_crash_console_init
 	b	console_core_init
 
 	/* ---------------------------------------------
-	 * int plat_crash_console_putc(void)
+	 * int plat_crash_console_putc(int c)
 	 * Function to print a character on the crash
 	 * console without a C Runtime.
 	 * Clobber list : x1, x2

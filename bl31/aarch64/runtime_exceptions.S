@@ -39,11 +39,14 @@
 	.globl	el3_exit
 
 	/* -----------------------------------------------------
-	 * Handle SMC exceptions seperately from other sync.
+	 * Handle SMC exceptions separately from other sync.
 	 * exceptions.
 	 * -----------------------------------------------------
 	 */
 	.macro	handle_sync_exception
+	/* Enable the SError interrupt */
+	msr	daifclr, #DAIF_ABT_BIT
+
 	str	x30, [sp, #CTX_GPREGS_OFFSET + CTX_GPREG_LR]
 	mrs	x30, esr_el3
 	ubfx	x30, x30, #ESR_EC_SHIFT, #ESR_EC_LENGTH
@@ -70,6 +73,9 @@
 	 * -----------------------------------------------------
 	 */
 	.macro	handle_interrupt_exception label
+	/* Enable the SError interrupt */
+	msr	daifclr, #DAIF_ABT_BIT
+
 	str	x30, [sp, #CTX_GPREGS_OFFSET + CTX_GPREG_LR]
 	bl	save_gp_registers
 
@@ -161,7 +167,7 @@ interrupt_error_\label:
 	.align	7
 runtime_exceptions:
 	/* -----------------------------------------------------
-	 * Current EL with _sp_el0 : 0x0 - 0x180
+	 * Current EL with _sp_el0 : 0x0 - 0x200
 	 * -----------------------------------------------------
 	 */
 sync_exception_sp_el0:
@@ -193,7 +199,7 @@ serror_sp_el0:
 	check_vector_size serror_sp_el0
 
 	/* -----------------------------------------------------
-	 * Current EL with SPx: 0x200 - 0x380
+	 * Current EL with SPx: 0x200 - 0x400
 	 * -----------------------------------------------------
 	 */
 	.align	7
@@ -224,7 +230,7 @@ serror_sp_elx:
 	check_vector_size serror_sp_elx
 
 	/* -----------------------------------------------------
-	 * Lower EL using AArch64 : 0x400 - 0x580
+	 * Lower EL using AArch64 : 0x400 - 0x600
 	 * -----------------------------------------------------
 	 */
 	.align	7
@@ -261,7 +267,7 @@ serror_aarch64:
 	check_vector_size serror_aarch64
 
 	/* -----------------------------------------------------
-	 * Lower EL using AArch32 : 0x600 - 0x780
+	 * Lower EL using AArch32 : 0x600 - 0x800
 	 * -----------------------------------------------------
 	 */
 	.align	7

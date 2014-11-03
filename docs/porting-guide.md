@@ -16,8 +16,9 @@ Contents
     *   PSCI implementation (in BL3-1)
     *   Interrupt Management framework (in BL3-1)
     *   Crash Reporting mechanism (in BL3-1)
-4.  C Library
-5.  Storage abstraction layer
+4.  Build flags
+5.  C Library
+6.  Storage abstraction layer
 
 - - - - - - - - - - - - - - - - - -
 
@@ -150,31 +151,6 @@ file is found in [plat/fvp/include/platform_def.h].
     Defines the total number of nodes in the affinity heirarchy at all affinity
     levels used by the platform.
 
-*   **#define : TZROM_BASE**
-
-    Defines the base address of secure ROM on the platform, where the BL1 binary
-    is loaded. This constant is used by the linker scripts to ensure that the
-    BL1 image fits into the available memory.
-
-*   **#define : TZROM_SIZE**
-
-    Defines the size of secure ROM on the platform. This constant is used by the
-    linker scripts to ensure that the BL1 image fits into the available memory.
-
-*   **#define : TZRAM_BASE**
-
-    Defines the base address of the secure RAM on platform, where the data
-    section of the BL1 binary is loaded. The BL2 and BL3-1 images are also
-    loaded in this secure RAM region. This constant is used by the linker
-    scripts to ensure that the BL1 data section and BL2/BL3-1 binary images fit
-    into the available memory.
-
-*   **#define : TZRAM_SIZE**
-
-    Defines the size of the secure RAM on the platform. This constant is used by
-    the linker scripts to ensure that the BL1 data section and BL2/BL3-1 binary
-    images fit into the available memory.
-
 *   **#define : BL1_RO_BASE**
 
     Defines the base address in secure ROM where BL1 originally lives. Must be
@@ -218,30 +194,57 @@ file is found in [plat/fvp/include/platform_def.h].
     Defines the base address in non-secure DRAM where BL2 loads the BL3-3 binary
     image. Must be aligned on a page-size boundary.
 
-If the BL3-2 image is supported by the platform, the following constants must
-be defined as well:
+If a BL3-2 image is supported by the platform, the following constants must
+also be defined:
 
-*   **#define : TSP_SEC_MEM_BASE**
+*   **#define : BL32_IMAGE_NAME**
 
-    Defines the base address of the secure memory used by the BL3-2 image on the
-    platform.
-
-*   **#define : TSP_SEC_MEM_SIZE**
-
-    Defines the size of the secure memory used by the BL3-2 image on the
-    platform.
+    Name of the BL3-2 binary image on the host file-system. This name is used by
+    BL2 to load BL3-2 into secure memory from platform storage.
 
 *   **#define : BL32_BASE**
 
     Defines the base address in secure memory where BL2 loads the BL3-2 binary
-    image. Must be inside the secure memory identified by `TSP_SEC_MEM_BASE` and
-    `TSP_SEC_MEM_SIZE` constants. Must also be aligned on a page-size boundary.
+    image. Must be aligned on a page-size boundary.
 
 *   **#define : BL32_LIMIT**
 
-    Defines the maximum address that the BL3-2 image can occupy. Must be inside
-    the secure memory identified by `TSP_SEC_MEM_BASE` and `TSP_SEC_MEM_SIZE`
-    constants.
+    Defines the maximum address that the BL3-2 image can occupy.
+
+If the Test Secure-EL1 Payload (TSP) instantiation of BL3-2 is supported by the
+platform, the following constants must also be defined:
+
+*   **#define : TSP_SEC_MEM_BASE**
+
+    Defines the base address of the secure memory used by the TSP image on the
+    platform. This must be at the same address or below `BL32_BASE`.
+
+*   **#define : TSP_SEC_MEM_SIZE**
+
+    Defines the size of the secure memory used by the BL3-2 image on the
+    platform. `TSP_SEC_MEM_BASE` and `TSP_SEC_MEM_SIZE` must fully accomodate
+    the memory required by the BL3-2 image, defined by `BL32_BASE` and
+    `BL32_LIMIT`.
+
+*   **#define : TSP_IRQ_SEC_PHY_TIMER**
+
+    Defines the ID of the secure physical generic timer interrupt used by the
+    TSP's interrupt handling code.
+
+If the platform port uses the IO storage framework, the following constants
+must also be defined:
+
+*   **#define : MAX_IO_DEVICES**
+
+    Defines the maximum number of registered IO devices. Attempting to register
+    more devices than this value using `io_register_device()` will fail with
+    IO_RESOURCES_EXHAUSTED.
+
+*   **#define : MAX_IO_HANDLES**
+
+    Defines the maximum number of open IO handles. Attempting to open more IO
+    entities than this value using `io_open()` will fail with
+    IO_RESOURCES_EXHAUSTED.
 
 The following constants are optional. They should be defined when the platform
 memory layout implies some image overlaying like on FVP.
@@ -251,7 +254,7 @@ memory layout implies some image overlaying like on FVP.
     Defines the maximum address in secure RAM that the BL3-1's progbits sections
     can occupy.
 
-*   **#define : BL32_PROGBITS_LIMIT**
+*   **#define : TSP_PROGBITS_LIMIT**
 
     Defines the maximum address that the TSP's progbits sections can occupy.
 
@@ -456,6 +459,32 @@ This function receives the exception type as its argument. Possible values for
 exceptions types are listed in the [include/runtime_svc.h] header file. Note
 that these constants are not related to any architectural exception code; they
 are just an ARM Trusted Firmware convention.
+
+
+### Function : plat_reset_handler()
+
+    Argument : void
+    Return   : void
+
+A platform may need to do additional initialization after reset. This function
+allows the platform to do the platform specific intializations. Platform
+specific errata workarounds could also be implemented here. The api should
+preserve the value in x10 register as it is used by the caller to store the
+return address.
+
+The default implementation doesn't do anything.
+
+### Function : plat_disable_acp()
+
+    Argument : void
+    Return   : void
+
+This api allows a platform to disable the Accelerator Coherency Port (if
+present) during a cluster power down sequence. The default weak implementation
+doesn't do anything. Since this api is called during the power down sequence,
+it has restrictions for stack usage and it can use the registers x0 - x17 as
+scratch registers. It should preserve the value in x18 register as it is used
+by the caller to store the return address.
 
 
 3.  Modifications specific to a Boot Loader stage
@@ -1041,7 +1070,7 @@ level as 1, resulting in PSCI power control up to the cluster level.
 
 ### Function : platform_setup_pm() [mandatory]
 
-    Argument : plat_pm_ops **
+    Argument : const plat_pm_ops **
     Return   : int
 
 This function may execute with the MMU and data caches enabled if the platform
@@ -1053,10 +1082,9 @@ handler routines for platform-specific power management actions by populating
 the passed pointer with a pointer to BL3-1's private `plat_pm_ops` structure.
 
 A description of each member of this structure is given below. Please refer to
-the ARM FVP specific implementation of these handlers in [plat/fvp/plat_pm.c]
+the ARM FVP specific implementation of these handlers in [plat/fvp/fvp_pm.c]
 as an example. A platform port may choose not implement some of the power
-management operations. For example, the ARM FVP port does not implement the
-`affinst_standby()` function.
+management operations.
 
 #### plat_pm_ops.affinst_standby()
 
@@ -1272,24 +1300,24 @@ uses the group value to determine the type of interrupt.
 3.5  Crash Reporting mechanism (in BL3-1)
 ----------------------------------------------
 BL3-1 implements a crash reporting mechanism which prints the various registers
-of the CPU to enable quick crash analysis and debugging. It requires that a console
-is designated as the crash console by the platform which will used to print the
-register dump.
+of the CPU to enable quick crash analysis and debugging. It requires that a
+console is designated as the crash console by the platform which will be used to
+print the register dump.
 
-The following functions must be implemented by the platform if it wants crash reporting
-mechanism in BL3-1. The functions are implemented in assembly so that they can be
-invoked without a C Runtime stack.
+The following functions must be implemented by the platform if it wants crash
+reporting mechanism in BL3-1. The functions are implemented in assembly so that
+they can be invoked without a C Runtime stack.
 
 ### Function : plat_crash_console_init
 
     Argument : void
     Return   : int
 
-This API is used by the crash reporting mechanism to intialize the crash console.
-It should only use the general purpose registers x0 to x2 to do the initiaization
-and returns 1 on success.
+This API is used by the crash reporting mechanism to initialize the crash
+console. It should only use the general purpose registers x0 to x2 to do the
+initialization and returns 1 on success.
 
-The FVP port designates the PL011_UART0 as the crash console and calls the
+The FVP port designates the `PL011_UART0` as the crash console and calls the
 console_core_init() to initialize the console.
 
 ### Function : plat_crash_console_putc
@@ -1302,10 +1330,29 @@ designated crash console. It should only use general purpose registers x1 and
 x2 to do its work. The parameter and the return value are in general purpose
 register x0.
 
-The FVP port designates the PL011_UART0 as the crash console and calls the
+The FVP port designates the `PL011_UART0` as the crash console and calls the
 console_core_putc() to print the character on the console.
 
-4.  C Library
+4.  Build flags
+---------------
+
+There are some build flags which can be defined by the platform to control
+inclusion or exclusion of certain BL stages from the FIP image. These flags
+need to be defined in the platform makefile which will get included by the
+build system.
+
+*   **NEED_BL30**
+    This flag if defined by the platform mandates that a BL3-0 binary should
+    be included in the FIP image. The path to the BL3-0 binary can be specified
+    by the `BL30` build option (see build options in the [User Guide]).
+
+*   **NEED_BL33**
+    By default, this flag is defined `yes` by the build system and `BL33`
+    build option should be supplied as a build option. The platform has the option
+    of excluding the BL3-3 image in the `fip` image by defining this flag to
+    `no`.
+
+5.  C Library
 -------------
 
 To avoid subtle toolchain behavioral dependencies, the header files provided
@@ -1342,7 +1389,7 @@ A copy of the [FreeBSD] sources can be downloaded with `git`.
     git clone git://github.com/freebsd/freebsd.git -b origin/release/9.2.0
 
 
-5.  Storage abstraction layer
+6.  Storage abstraction layer
 -----------------------------
 
 In order to improve platform independence and portability an storage abstraction
